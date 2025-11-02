@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Canvas — Cartas como Sprites (arrastar)</title>
+    <style>
+        html,
+        body {
+            height: 100%;
+            margin: 0;
+            font-family: system-ui, Segoe UI, Roboto, Arial
+        }
+
+        .wrap {
+            display: flex;
+            gap: 12px;
+            height: 100%;
+            padding: 12px;
+            box-sizing: border-box
+        }
+
+        #game {
+            flex: 1;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            background: linear-gradient(#0b2, #036);
+            display: block
+        }
+
+        .panel {
+            width: 320px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px
+        }
+
+        .panel .info {
+            background: #fff;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, .2)
+        }
+
+        button {
+            padding: 8px;
+            border-radius: 6px;
+            border: 0;
+            background: #277;
+            color: #fff
+        }
+    </style>
+</head>
+
+<body>
+    <div class="wrap">
+        <canvas id="game" width="1200" height="720"></canvas>
+        <div class="panel">
+            <div class="info">
+                <h3>Instruções</h3>
+                <ul>
+                    <li>Arraste as cartas com o mouse (ou toque) — segurando e movendo.</li>
+                    <li>As cartas são sprites extraídas de um sprite sheet gerado dinamicamente.</li>
+                    <li>Cliques rápidos selecionam a carta; soltando-a coloca onde estava o ponteiro.</li>
+                </ul>
+                <button id="shuffle">Embaralhar/Reposicionar</button>
+            </div>
+            <div class="info">
+                <strong>Observações:</strong>
+                <p>Arquivo autônomo: salve como <code>cartas.html</code> e abra no navegador.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        (() => {
+            const canvas = document.getElementById('game');
+            const ctx = canvas.getContext('2d');
+            const DPR = Math.max(1, window.devicePixelRatio || 1);
+            // Scale for crispness
+            function resize() {
+                const w = canvas.clientWidth; const h = canvas.clientHeight;
+                canvas.width = Math.floor(w * DPR);
+                canvas.height = Math.floor(h * DPR);
+                ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+                draw();
+            }
+            // Simple sprite-sheet generator (no external images) -> draws card faces
+            const SPRITE_COLS = 4;
+            const SPRITE_ROWS = 10;
+            const CARD_W = 140;
+            const CARD_H = 200;
+            const PADDING = 8;
+            const sheetW = SPRITE_COLS * (CARD_W + PADDING);
+            const sheetH = SPRITE_ROWS * (CARD_H + PADDING);
+            const spriteSheet = document.createElement('canvas');
+            spriteSheet.width = sheetW; spriteSheet.height = sheetH;
+            const sctx = spriteSheet.getContext('2d');
+
+            // draw some simple card faces
+            const num = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'reverse', 'block'];
+            const color = ['red', 'green', 'blue', 'yellow', 'wild'];
+            let i = 0;
+            for (let r = 0; r < SPRITE_ROWS; r++) {
+                for (let c = 0; c < SPRITE_COLS; c++) {
+                    const x = c * (CARD_W + PADDING) + PADDING / 2;
+                    const y = r * (CARD_H + PADDING) + PADDING / 2;
+                    drawCardFace(sctx, x, y, CARD_W, CARD_H, num[r] || 'X', color[c] || 'orange', i);
+                    i++;
+                }
+            }
+
+            function drawCardFace(g, x, y, w, h, num, color, idx) {
+                // fundo carta
+                const radius = 10;
+                g.fillStyle = color;
+                roundRect(g, x, y, w, h, radius, true, false);
+                g.strokeStyle = '#222';
+                g.lineWidth = 2;
+                g.stroke();
+
+                // número principal
+                g.fillStyle = '#fff';
+                g.font = '24px sans-serif';
+                g.textAlign = 'left';
+                g.textBaseline = 'top';
+                g.fillText(num, x + 11, y + 12);
+
+                // underline se for 6 ou 9
+                if (num === '6' || num === '9') {
+                    const textWidth = g.measureText(num).width;
+                    const underlineY = y + 12 + 24 + 2; // top + fontSize + gap
+                    g.strokeStyle = '#fff';
+                    g.lineWidth = 2;
+                    g.beginPath();
+                    g.moveTo(x + 11, underlineY);
+                    g.lineTo(x + 11 + textWidth, underlineY);
+                    g.stroke();
+                }
+
+                // decoration: small index number
+                g.fillStyle = 'rgba(0,0,0,0.05)';
+                g.font = '110px sans-serif';
+                g.textAlign = 'center';
+                g.textBaseline = 'middle';
+                g.fillText(idx.toString(), x + (w / 2), y + (h / 2));
+            }
+
+
+            function roundRect(ctx, x, y, w, h, r, fill, stroke) {
+                if (typeof r === 'undefined') r = 5;
+                ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+                if (fill) ctx.fill(); if (stroke) ctx.stroke();
+            }
+
+            // Card instances
+            const cards = [];
+            const totalCards = SPRITE_COLS * SPRITE_ROWS; // 12
+            // create card objects with position, source rect on sprite sheet
+            let zCounter = 1;
+            for (let n = 0; n < totalCards; n++) {
+                const col = n % SPRITE_COLS; const row = Math.floor(n / SPRITE_COLS);
+                const sx = col * (CARD_W + PADDING) + PADDING / 2;
+                const sy = row * (CARD_H + PADDING) + PADDING / 2;
+                cards.push({
+                    id: n,
+                    sx, sy, sw: CARD_W, sh: CARD_H,
+                    x: 40 + (n % 6) * (CARD_W * 0.6),
+                    y: 40 + Math.floor(n / 6) * (CARD_H * 0.45),
+                    w: CARD_W * 0.9, h: CARD_H * 0.9,
+                    rotation: (Math.random() - 0.5) * 0.06,
+                    z: 1,
+                });
+            }
+
+            function draw() {
+                // clear
+                ctx.clearRect(0, 0, canvas.width / DPR, canvas.height / DPR);
+                // background
+                ctx.save();
+                ctx.fillStyle = '#002D04';
+                ctx.fillRect(0, 0, canvas.width / DPR, canvas.height / DPR);
+                ctx.restore();
+
+                // sort by z then draw
+                const drawOrder = [...cards].sort((a, b) => a.z - b.z);
+                for (const c of drawOrder) {
+                    ctx.save();
+                    ctx.translate(c.x + c.w / 2, c.y + c.h / 2);
+                    ctx.rotate(c.rotation);
+                    ctx.drawImage(spriteSheet, c.sx, c.sy, c.sw, c.sh, -c.w / 2, -c.h / 2, c.w, c.h);
+                    // subtle shadow when on top
+                    if (c === draggingCard) {
+                        ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowBlur = 20;
+                    }
+                    ctx.restore();
+                }
+            }
+
+            // pointer handling
+            let draggingCard = null;
+            let dragOffset = { x: 0, y: 0 };
+
+            function getPointerPos(evt) {
+                const rect = canvas.getBoundingClientRect();
+                const clientX = (evt.touches ? evt.touches[0].clientX : evt.clientX);
+                const clientY = (evt.touches ? evt.touches[0].clientY : evt.clientY);
+                return { x: (clientX - rect.left), y: (clientY - rect.top) };
+            }
+
+            function hitTest(px, py) {
+                // iterate from top z to bottom
+                const topFirst = [...cards].sort((a, b) => b.z - a.z);
+                for (const c of topFirst) {
+                    // transform point inverse of rotation and translation
+                    const cx = c.x + c.w / 2, cy = c.y + c.h / 2;
+                    const dx = px - cx, dy = py - cy;
+                    const cos = Math.cos(-c.rotation), sin = Math.sin(-c.rotation);
+                    const rx = dx * cos - dy * sin + c.w / 2;
+                    const ry = dx * sin + dy * cos + c.h / 2;
+                    if (rx >= 0 && rx <= c.w && ry >= 0 && ry <= c.h) return c;
+                }
+                return null;
+            }
+
+            function pointerDown(evt) {
+                evt.preventDefault();
+                const p = getPointerPos(evt);
+                const c = hitTest(p.x, p.y);
+                if (c) {
+                    // bring to top
+                    c.z = ++zCounter;
+                    draggingCard = c;
+                    dragOffset.x = p.x - c.x; dragOffset.y = p.y - c.y;
+                    draw();
+                }
+            }
+            function pointerMove(evt) {
+                if (!draggingCard) return;
+                evt.preventDefault();
+                const p = getPointerPos(evt);
+                draggingCard.x = p.x - dragOffset.x;
+                draggingCard.y = p.y - dragOffset.y;
+                draw();
+            }
+            function pointerUp(evt) {
+                if (!draggingCard) return;
+                // snap rotation a bit back
+                draggingCard.rotation *= 0.98;
+                draggingCard = null;
+                draw();
+            }
+
+            // mouse
+            canvas.addEventListener('mousedown', pointerDown);
+            window.addEventListener('mousemove', pointerMove);
+            window.addEventListener('mouseup', pointerUp);
+            // touch
+            canvas.addEventListener('touchstart', pointerDown, { passive: false });
+            window.addEventListener('touchmove', pointerMove, { passive: false });
+            window.addEventListener('touchend', pointerUp);
+
+            // shuffle button
+            document.getElementById('shuffle').addEventListener('click', () => {
+                for (let idx = 0; idx < cards.length; idx++) {
+                    const c = cards[idx];
+                    c.x = 40 + (idx % 6) * (CARD_W * 0.6);
+                    c.y = 40 + Math.floor(idx / 6) * (CARD_H * 0.45);
+                    c.rotation = (Math.random() - 0.5) * 0.08;
+                    c.z = 1 + Math.floor(Math.random() * 10);
+                }
+                zCounter = 100; draw();
+            });
+
+            // handle resize
+            new ResizeObserver(resize).observe(canvas);
+            resize();
+
+            // initial draw
+            draw();
+
+        })();
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebRTC DataChannel - Exemplo de Texto</title>
+    <style>
+        body { font-family: Arial, sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        #chat-container { display: flex; gap: 20px; width: 80%; max-width: 1000px; }
+        .peer-box { flex: 1; border: 1px solid #ccc; padding: 15px; border-radius: 8px; }
+        h3 { text-align: center; color: #333; }
+        textarea { width: 100%; height: 100px; margin-bottom: 10px; padding: 5px; box-sizing: border-box; resize: none; border: 1px solid #ddd; }
+        #log-a, #log-b { height: 150px; overflow-y: scroll; border: 1px solid #eee; padding: 10px; background-color: #f9f9f9; }
+        button { padding: 8px 15px; cursor: pointer; background-color: #4CAF50; color: white; border: none; border-radius: 4px; margin-top: 5px; }
+        button:disabled { background-color: #aaa; cursor: default; }
+    </style>
+</head>
+<body>
+
+    <h1>💬 WebRTC DataChannel (Chat Local)</h1>
+    <p>Clique em **Conectar Peers** para iniciar o DataChannel.</p>
+    
+    <button id="connect-button">Conectar Peers</button>
+    <hr style="width: 80%; margin: 20px 0;">
+
+    <div id="chat-container">
+        <div class="peer-box">
+            <h3>Peer A (Local)</h3>
+            <textarea id="message-a" placeholder="Digite uma mensagem para o Peer B..." disabled></textarea>
+            <button id="send-a" disabled>Enviar</button>
+            <h4>Log de Mensagens Recebidas:</h4>
+            <div id="log-a"></div>
+        </div>
+
+        <div class="peer-box">
+            <h3>Peer B (Remoto)</h3>
+            <textarea id="message-b" placeholder="Digite uma mensagem para o Peer A..." disabled></textarea>
+            <button id="send-b" disabled>Enviar</button>
+            <h4>Log de Mensagens Recebidas:</h4>
+            <div id="log-b"></div>
+        </div>
+    </div>
+
+    <script>
+        // --- Variáveis Globais ---
+        let pcA, pcB; // RTCPeerConnection para o Peer A e Peer B
+        let dataChannelA, dataChannelB; // RTCDataChannel
+        const connectButton = document.getElementById('connect-button');
+        const sendButtonA = document.getElementById('send-a');
+        const sendButtonB = document.getElementById('send-b');
+        const messageInputA = document.getElementById('message-a');
+        const messageInputB = document.getElementById('message-b');
+        const logA = document.getElementById('log-a');
+        const logB = document.getElementById('log-b');
+
+        // Configuração ICE (STUN server público para descoberta de endereço)
+        const iceServers = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' }
+            ]
+        };
+
+        // --- Funções Auxiliares de Log ---
+        function logMessage(target, message) {
+            const now = new Date().toLocaleTimeString();
+            target.innerHTML += `<p><strong>[${now}]</strong> ${message}</p>`;
+            target.scrollTop = target.scrollHeight; // Rola para o final
+        }
+
+        function updateUI(status) {
+            const isConnected = status === 'open';
+            messageInputA.disabled = !isConnected;
+            sendButtonA.disabled = !isConnected;
+            messageInputB.disabled = !isConnected;
+            sendButtonB.disabled = !isConnected;
+            connectButton.disabled = isConnected;
+            connectButton.textContent = isConnected ? 'Conectado!' : 'Conectar Peers';
+            if (isConnected) {
+                logMessage(logA, '✅ DataChannel Aberto.');
+                logMessage(logB, '✅ DataChannel Aberto.');
+            }
+        }
+
+        // --- Lógica de Criação da Conexão e DataChannel ---
+
+        async function createConnection() {
+            logMessage(logA, 'Iniciando conexão...');
+            logMessage(logB, 'Aguardando oferta...');
+            connectButton.disabled = true;
+
+            // 1. Cria os objetos RTCPeerConnection
+            pcA = new RTCPeerConnection(iceServers);
+            pcB = new RTCPeerConnection(iceServers);
+
+            // 2. Configura a troca de ICE Candidates
+            pcA.onicecandidate = e => {
+                if (e.candidate) {
+                    pcB.addIceCandidate(e.candidate).catch(err => console.error('Error adding ICE candidate to B:', err));
+                }
+            };
+            pcB.onicecandidate = e => {
+                if (e.candidate) {
+                    pcA.addIceCandidate(e.candidate).catch(err => console.error('Error adding ICE candidate to A:', err));
+                }
+            };
+
+            // 3. Cria o DataChannel no Peer A
+            dataChannelA = pcA.createDataChannel('chatChannel');
+            logMessage(logA, 'DataChannel criado no Peer A.');
+            
+            // Define o que acontece quando o DataChannel de A abre e recebe mensagens
+            dataChannelA.onopen = () => {
+                logMessage(logA, `**Status do DataChannel: ${dataChannelA.readyState.toUpperCase()}**`);
+                updateUI(dataChannelA.readyState);
+            };
+            dataChannelA.onmessage = e => {
+                logMessage(logA, `**Peer B diz:** ${e.data}`);
+            };
+
+            // 4. Peer B escuta por um DataChannel remoto
+            pcB.ondatachannel = event => {
+                dataChannelB = event.channel;
+                logMessage(logB, 'DataChannel recebido do Peer A.');
+
+                // Define o que acontece quando o DataChannel de B abre e recebe mensagens
+                dataChannelB.onopen = () => {
+                    logMessage(logB, `**Status do DataChannel: ${dataChannelB.readyState.toUpperCase()}**`);
+                    updateUI(dataChannelB.readyState);
+                };
+                dataChannelB.onmessage = e => {
+                    logMessage(logB, `**Peer A diz:** ${e.data}`);
+                };
+            };
+
+            // 5. Cria a Offer (Oferta) no Peer A
+            try {
+                const offer = await pcA.createOffer();
+                await pcA.setLocalDescription(offer);
+                logMessage(logA, 'Offer criada e definida.');
+
+                // 6. Peer B recebe a Offer e cria a Answer (Resposta)
+                await pcB.setRemoteDescription(pcA.localDescription);
+                logMessage(logB, 'Offer recebida. Criando Answer...');
+                
+                const answer = await pcB.createAnswer();
+                await pcB.setLocalDescription(answer);
+                logMessage(logB, 'Answer criada e definida.');
+
+                // 7. Peer A recebe a Answer
+                await pcA.setRemoteDescription(pcB.localDescription);
+                logMessage(logA, 'Answer recebida. Conexão estabelecida.');
+                
+            } catch (error) {
+                console.error('Erro no estabelecimento da conexão:', error);
+                logMessage(logA, `<span style="color:red;">❌ Erro ao conectar: ${error.message}</span>`);
+                logMessage(logB, `<span style="color:red;">❌ Erro ao conectar: ${error.message}</span>`);
+                connectButton.disabled = false;
+            }
+        }
+
+        // --- Lógica de Envio de Mensagem ---
+
+        function sendMessageA() {
+            const message = messageInputA.value;
+            if (message && dataChannelA && dataChannelA.readyState === 'open') {
+                dataChannelA.send(message);
+                logMessage(logA, `**Você diz:** ${message}`);
+                messageInputA.value = ''; // Limpa a entrada
+            }
+        }
+
+        function sendMessageB() {
+            const message = messageInputB.value;
+            if (message && dataChannelB && dataChannelB.readyState === 'open') {
+                dataChannelB.send(message);
+                logMessage(logB, `**Você diz:** ${message}`);
+                messageInputB.value = ''; // Limpa a entrada
+            }
+        }
+
+        // --- Event Listeners ---
+
+        connectButton.addEventListener('click', createConnection);
+        sendButtonA.addEventListener('click', sendMessageA);
+        sendButtonB.addEventListener('click', sendMessageB);
+
+        // Adiciona funcionalidade de "Enviar" ao pressionar Enter nos campos de texto
+        messageInputA.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessageA();
+            }
+        });
+        messageInputB.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessageB();
+            }
+        });
+
+    </script>
+</body>
+</html>

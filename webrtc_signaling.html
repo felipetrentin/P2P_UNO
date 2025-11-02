@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>WebRTC Chat com WebSocket</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        #chat-container { border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll; margin-bottom: 10px; }
+        .message-local { text-align: right; color: blue; }
+        .message-remote { text-align: left; color: green; }
+    </style>
+</head>
+<body>
+
+    <h1>WebRTC Chat Demo (via DataChannel)</h1>
+    <p>Conecte dois navegadores à mesma página (e ao servidor WebSocket em **ws://localhost:8080**) para iniciar o chat.</p>
+
+    <div id="chat-container">
+        </div>
+
+    <input type="text" id="message-input" placeholder="Digite sua mensagem..." style="width: 80%;">
+    <button id="send-button" disabled>Enviar</button>
+    <button id="connect-button">Conectar ao Servidor</button>
+
+    <script>
+        // --- Configuração ---
+        const SIGNALING_SERVER_URL = 'ws://localhost:8080';
+        const ICE_SERVERS = {
+            iceServers: [
+                // Usar um servidor STUN é crucial para descobrir o IP e a porta públicos
+                { urls: 'stun:stun.l.google.com:19302' }
+            ]
+        };
+
+        // --- Variáveis Globais ---
+        let ws; // Conexão WebSocket
+        let pc; // RTCPeerConnection
+        let dataChannel; // RTCDataChannel para o chat
+
+        // --- Elementos do DOM ---
+        const chatContainer = document.getElementById('chat-container');
+        const messageInput = document.getElementById('message-input');
+        const sendButton = document.getElementById('send-button');
+        const connectButton = document.getElementById('connect-button');
+
+        // --- Funções Auxiliares de UI ---
+
+        function log(message, type = 'system') {
+            const msgElement = document.createElement('div');
+            msgElement.textContent = message;
+            if (type === 'system') {
+                msgElement.style.fontStyle = 'italic';
+                msgElement.style.color = '#888';
+            } else if (type === 'local') {
+                msgElement.className = 'message-local';
+            } else if (type === 'remote') {
+                msgElement.className = 'message-remote';
+            }
+            chatContainer.appendChild(msgElement);
+            chatContainer.scrollTop = chatContainer.scrollHeight; // Rola para a última mensagem
+        }
+
+        function enableChat(isEnabled) {
+            messageInput.disabled = !isEnabled;
+            sendButton.disabled = !isEnabled;
+        }
+
+        // --- Lógica do WebSocket (Sinalização) ---
+
+        connectButton.onclick = () => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                log('Já conectado ao servidor de sinalização.', 'system');
+                return;
+            }
+            
+            log('Tentando conectar ao servidor de sinalização...', 'system');
+            ws = new WebSocket(SIGNALING_SERVER_URL);
+
+            ws.onopen = () => {
+                log('Conectado ao servidor de sinalização. Pronto para começar o chat!', 'system');
+                connectButton.disabled = true;
+                // O primeiro cliente a se conectar deve criar uma oferta para iniciar a conexão
+                createPeerConnection();
+                createOffer(); 
+            };
+
+            ws.onmessage = async (event) => {
+                const message = JSON.parse(event.data);
+
+                // Se a conexão WebRTC ainda não foi criada, criamos ela
+                if (!pc) {
+                    createPeerConnection();
+                }
+
+                try {
+                    if (message.type === 'offer') {
+                        // Cliente B recebe a Oferta
+                        await pc.setRemoteDescription(new RTCSessionDescription(message));
+                        log('Oferta recebida. Criando Resposta (Answer)...', 'system');
+                        const answer = await pc.createAnswer();
+                        await pc.setLocalDescription(answer);
+                        sendMessage(pc.localDescription); // Envia a Resposta para o outro par
+                    } else if (message.type === 'answer') {
+                        // Cliente A recebe a Resposta
+                        log('Resposta (Answer) recebida.', 'system');
+                        await pc.setRemoteDescription(new RTCSessionDescription(message));
+                    } else if (message.type === 'candidate') {
+                        // Recebe candidatos ICE
+                        if (message.candidate) {
+                            await pc.addIceCandidate(new RTCIceCandidate(message.candidate));
+                            log('Candidato ICE remoto adicionado.', 'system');
+                        }
+                    }
+                } catch (err) {
+                    console.error(err);
+                    log('Erro ao processar mensagem de sinalização: ' + err.message, 'system');
+                }
+            };
+
+            ws.onclose = () => {
+                log('Conexão WebSocket fechada.', 'system');
+                connectButton.disabled = false;
+                enableChat(false);
+                if (pc) {
+                    pc.close();
+                    pc = null;
+                }
+            };
+
+            ws.onerror = (err) => {
+                log('Erro no WebSocket: ' + err.message, 'system');
+                console.error('WebSocket Error:', err);
+                connectButton.disabled = false;
+            };
+        };
+
+        function sendMessage(message) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(message));
+            } else {
+                log('Erro: Conexão de sinalização não está aberta.', 'system');
+            }
+        }
+
+        // --- Lógica do WebRTC (PeerConnection e DataChannel) ---
+
+        function createPeerConnection() {
+            pc = new RTCPeerConnection(ICE_SERVERS);
+            log('RTCPeerConnection criado.', 'system');
+
+            // 1. Coletar Candidatos ICE e enviá-los via WebSocket
+            pc.onicecandidate = (event) => {
+                if (event.candidate) {
+                    sendMessage({
+                        type: 'candidate',
+                        candidate: event.candidate
+                    });
+                    log('Candidato ICE local enviado.', 'system');
+                }
+            };
+
+            // 2. Configurar o DataChannel para o Cliente B (o que recebe a oferta)
+            pc.ondatachannel = (event) => {
+                dataChannel = event.channel;
+                setupDataChannel(dataChannel);
+                log('DataChannel remoto recebido.', 'system');
+            };
+            
+            // 3. Monitorar o estado da conexão
+            pc.oniceconnectionstatechange = () => {
+                log(`Estado da Conexão ICE: ${pc.iceConnectionState}`, 'system');
+                if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+                    log('Conexão WebRTC estabelecida!', 'system');
+                } else if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed') {
+                    log('Conexão WebRTC falhou ou foi fechada.', 'system');
+                    enableChat(false);
+                }
+            };
+
+            // 4. Configurar o DataChannel para o Cliente A (o que cria a oferta)
+            dataChannel = pc.createDataChannel('chat');
+            setupDataChannel(dataChannel);
+            log('DataChannel local criado.', 'system');
+        }
+
+        function setupDataChannel(channel) {
+            channel.onopen = () => {
+                log('DataChannel pronto. Chat ativado!', 'system');
+                enableChat(true);
+            };
+
+            channel.onclose = () => {
+                log('DataChannel fechado. Chat desativado.', 'system');
+                enableChat(false);
+            };
+
+            channel.onmessage = (event) => {
+                log(`Par Remoto: ${event.data}`, 'remote');
+            };
+        }
+
+        async function createOffer() {
+            try {
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                sendMessage(pc.localDescription); // Envia a Oferta via WebSocket
+                log('Oferta criada e enviada.', 'system');
+            } catch (err) {
+                console.error(err);
+                log('Erro ao criar Oferta: ' + err.message, 'system');
+            }
+        }
+
+        // --- Envio de Mensagens de Chat ---
+
+        sendButton.onclick = () => {
+            sendChatMessage();
+        };
+
+        messageInput.onkeypress = (e) => {
+            if (e.key === 'Enter') {
+                sendChatMessage();
+            }
+        };
+
+        function sendChatMessage() {
+            const message = messageInput.value.trim();
+            if (message && dataChannel && dataChannel.readyState === 'open') {
+                dataChannel.send(message);
+                log(`Você: ${message}`, 'local');
+                messageInput.value = '';
+            }
+        }
+
+        // --- Inicialização ---
+        enableChat(false);
+
+    </script>
+
+</body>
+</html>
