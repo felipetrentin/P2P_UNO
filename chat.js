@@ -39,9 +39,10 @@ messageInput.onkeypress = (e) => {
 };
 
 function sendChatMessage() {
+    const chatChannel = dataChannels.get('chat');
     const message = messageInput.value.trim();
-    if (message && dataChannel && dataChannel.readyState === 'open') {
-        dataChannel.send(message);
+    if (message && chatChannel && chatChannel.readyState === 'open') {
+        chatChannel.send(message);
         log(`Você: ${message}`, 'local');
         messageInput.value = '';
     }

@@ -125,6 +125,7 @@ for (let i = 0; i < 2; i++) {
         cards.push({
             x: i * 0.1,
             y: j * 0.2,
+            idx: idx,
             rotation: 0,
             tex: createCardTexture(gl, colors[idx % colors.length], nums[idx % nums.length], idx)
         });
@@ -136,35 +137,94 @@ for (let i = 0; i < 2; i++) {
 // coordenadas em screnspace, 0,0 é no centro, negativo para esquerda e para baixo.
 
 let dragCard = null, dragOffset = { x: 0, y: 0 };
-canvas.addEventListener('mousedown', (e) => {
-    const mx = ((2 * e.clientX) / canvas.width) - 1;
-    const my = ((-2 * e.clientY) / canvas.height) + 1;
-    console.log("clicked", mx, my, e);
+
+// Função auxiliar para obter coordenadas normalizadas
+function getNormalizedCoordinates(clientX, clientY) {
+    const mx = ((2 * clientX) / canvas.width) - 1;
+    const my = ((-2 * clientY) / canvas.height) + 1;
+    return { mx, my };
+}
+
+// Função para encontrar a carta clicada/tocada
+function findCardAt(x, y) {
     const scr_card_w = (CARD_W / canvas.width);
     const scr_card_h = (CARD_H / canvas.height);
+    
     for (let i = cards.length - 1; i >= 0; i--) {
         const c = cards[i];
         if (
-            mx > c.x - scr_card_w / 2 && mx < c.x + scr_card_w / 2 &&
-            my > c.y - scr_card_h / 2 && my < c.y + scr_card_h / 2
+            x > c.x - scr_card_w / 2 && x < c.x + scr_card_w / 2 &&
+            y > c.y - scr_card_h / 2 && y < c.y + scr_card_h / 2
         ) {
-            dragCard = c;
-            dragOffset.x = mx - c.x; dragOffset.y = my - c.y;
-            break;
+            return { card: c, index: i };
         }
+    }
+    return null;
+}
+
+// Eventos de mouse
+canvas.addEventListener('mousedown', (e) => {
+    const { mx, my } = getNormalizedCoordinates(e.clientX, e.clientY);
+    console.log("clicked", mx, my, e);
+    
+    const found = findCardAt(mx, my);
+    if (found) {
+        dragCard = found.card;
+        dragOffset.x = mx - found.card.x;
+        dragOffset.y = my - found.card.y;
     }
 });
 
 canvas.addEventListener('mousemove', (e) => {
     if (dragCard) {
-        const mx = ((2 * e.clientX) / canvas.width) - 1;
-        const my = ((-2 * e.clientY) / canvas.height) + 1;
+        const { mx, my } = getNormalizedCoordinates(e.clientX, e.clientY);
         dragCard.x = mx - dragOffset.x;
         dragCard.y = my - dragOffset.y;
+        broadcastCardUpdate();
         draw();
     }
 });
-canvas.addEventListener('mouseup', () => { dragCard = null; });
+
+canvas.addEventListener('mouseup', () => { 
+    dragCard = null; 
+});
+
+// Eventos de touch
+canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault(); // Prevenir scroll
+    const touch = e.touches[0];
+    const { mx, my } = getNormalizedCoordinates(touch.clientX, touch.clientY);
+    console.log("touch started", mx, my, e);
+    
+    const found = findCardAt(mx, my);
+    if (found) {
+        dragCard = found.card;
+        dragOffset.x = mx - found.card.x;
+        dragOffset.y = my - found.card.y;
+    }
+});
+
+canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault(); // Prevenir scroll
+    if (dragCard) {
+        const touch = e.touches[0];
+        const { mx, my } = getNormalizedCoordinates(touch.clientX, touch.clientY);
+        dragCard.x = mx - dragOffset.x;
+        dragCard.y = my - dragOffset.y;
+        broadcastCardUpdate();
+        draw();
+    }
+});
+
+canvas.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    dragCard = null;
+});
+
+canvas.addEventListener('touchcancel', (e) => {
+    e.preventDefault();
+    dragCard = null;
+});
 
 // matrizes de transformação
 function translationMatrix(tx, ty) {

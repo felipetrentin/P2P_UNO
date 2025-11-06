@@ -58,7 +58,7 @@ async def main():
     """
     # Inicia o servidor em localhost (127.0.0.1) na porta 8080
     # O handler(websocket) será chamado para cada nova conexão
-    async with websockets.serve(handler, "localhost", 8080):
+    async with websockets.serve(handler, "192.168.0.137", 8080):
         logging.info("Servidor de Sinalização WebRTC (Python) rodando em ws://localhost:8080")
         # Mantém o servidor rodando infinitamente
         await asyncio.Future() 

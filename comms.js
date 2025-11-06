@@ -1,5 +1,5 @@
 // --- Configuração ---
-const SIGNALING_SERVER_URL = 'ws://localhost:8080';
+const SIGNALING_SERVER_URL = 'ws://192.168.0.137:8080';
 const ICE_SERVERS = {
     iceServers: [
         // Usar um servidor STUN é crucial para descobrir o IP e a porta públicos
@@ -10,7 +10,7 @@ const ICE_SERVERS = {
 // --- Variáveis Globais ---
 let ws; // Conexão WebSocket
 let pc; // RTCPeerConnection
-let dataChannel; // RTCDataChannel para o chat
+let dataChannels = new Map(); // Mapa para armazenar múltiplos Data Channels
 
 // --- Elementos do DOM ---
 const connectButton = document.getElementById('connect-button');
@@ -75,6 +75,8 @@ connectButton.onclick = () => {
             pc.close();
             pc = null;
         }
+        // Limpar todos os Data Channels
+        dataChannels.clear();
     };
 
     ws.onerror = (err) => {
@@ -109,11 +111,12 @@ function createPeerConnection() {
         }
     };
 
-    // 2. Configurar o DataChannel para o Cliente B (o que recebe a oferta)
+    // 2. Configurar os Data Channels para o Cliente B (o que recebe a oferta)
     pc.ondatachannel = (event) => {
-        dataChannel = event.channel;
-        setupDataChannel(dataChannel);
-        console.log('DataChannel remoto ' + dataChannel.label + 'recebido.', 'system');
+        const channel = event.channel;
+        setupDataChannel(channel);
+        dataChannels.set(channel.label, channel);
+        console.log('DataChannel remoto ' + channel.label + ' recebido.', 'system');
     };
 
     // 3. Monitorar o estado da conexão
@@ -124,18 +127,36 @@ function createPeerConnection() {
         } else if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed') {
             log('Conexão WebRTC falhou ou foi fechada.', 'system');
             enableChat(false);
+            // Limpar todos os Data Channels
+            dataChannels.clear();
         }
     };
 
-    // 4. Configurar o DataChannel para o Cliente A (o que cria a oferta)
-    dataChannel = pc.createDataChannel('chat');
-    setupDataChannel(dataChannel);
-    log('DataChannel local criado.', 'system');
+    // 4. Configurar os Data Channels iniciais para o Cliente A (o que cria a oferta)
+    createInitialDataChannels();
+}
+
+function createInitialDataChannels() {
+    // Data Channel principal para chat
+    const chatChannel = pc.createDataChannel('chat');
+    setupDataChannel(chatChannel);
+    dataChannels.set('chat', chatChannel);
+    console.log('DataChannel "chat" criado.', 'system');
+
+    const updatesChannel = pc.createDataChannel('updates', {
+        ordered: false,          // Ordem não é crítica, velocidade é
+        maxRetransmits: 0        // Sem retransmissões - preferir perder dados
+    });
+    setupDataChannel(updatesChannel);
+    dataChannels.set('updates', updatesChannel);
+    console.log('DataChannel "updates" criado.', 'system');
 }
 
 function setupDataChannel(channel) {
-    if(channel.label === "chat"){
+    if(channel.label === 'chat'){
         setupChatDataChannel(channel);
+    }else if(channel.label === 'updates'){
+        setupUpdaterDataChannel(channel);
     }
 }
 
