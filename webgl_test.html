@@ -39,6 +39,15 @@
             box-shadow: 0 2px 6px rgba(0, 0, 0, .2)
         }
 
+        .chat {
+            background: #fff;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, .2);
+            height: 200px;
+            overflow-y: scroll
+        }
+
         button {
             padding: 8px;
             border-radius: 6px;
@@ -46,6 +55,9 @@
             background: #277;
             color: #fff
         }
+
+        .message-local { text-align: right; color: blue; }
+        .message-remote { text-align: left; color: green; }
     </style>
 </head>
 
@@ -66,10 +78,20 @@
                 <strong>Observações:</strong>
                 <p>Arquivo autônomo: salve como <code>cartas.html</code> e abra no navegador.</p>
             </div>
+            <div class="info">
+                <strong>Conexão</strong>
+                <button id="connect-button">Conectar</button>
+            </div>
+            <div class="chat" id="chat-container"></div>
+            <input type="text" id="message-input" placeholder="Digite sua mensagem..." style="width: 80%;">
+            <button id="send-button" disabled>Enviar</button>
         </div>
     </div>
     <script src="cards.js"></script>
+    <script src="chat.js" type="text/javascript"></script>
+    <script src="comms.js" type="text/javascript"></script>
     <script src="graphics.js" type="text/javascript" defer></script>
+    
 </body>
 
 </html>

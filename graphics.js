@@ -132,7 +132,9 @@ for (let i = 0; i < 2; i++) {
     }
 }
 
-// drag
+//lógica de manipulação de cartas
+// coordenadas em screnspace, 0,0 é no centro, negativo para esquerda e para baixo.
+
 let dragCard = null, dragOffset = { x: 0, y: 0 };
 canvas.addEventListener('mousedown', (e) => {
     const mx = ((2 * e.clientX) / canvas.width) - 1;
@@ -152,6 +154,7 @@ canvas.addEventListener('mousedown', (e) => {
         }
     }
 });
+
 canvas.addEventListener('mousemove', (e) => {
     if (dragCard) {
         const mx = ((2 * e.clientX) / canvas.width) - 1;
@@ -163,7 +166,7 @@ canvas.addEventListener('mousemove', (e) => {
 });
 canvas.addEventListener('mouseup', () => { dragCard = null; });
 
-// utils
+// matrizes de transformação
 function translationMatrix(tx, ty) {
     return [1, 0, tx,
         0, 1, ty,
@@ -176,6 +179,7 @@ function rotationMatrix(a) {
         s, c, 0,
         0, 0, 1];
 }
+
 function multiply(a, b) {
     let r = new Array(9);
     for (let i = 0; i < 3; i++) {
@@ -228,6 +232,8 @@ function draw() {
         //let matrix = transpose3x3(multiply(tm, multiply(rm, multiply(sm, tm_toCenter))))
         let matrix = transpose3x3(multiply(tm, multiply(rm, multiply(sm, tm_toCenter))));
 
+        // precisamos transpor pois esse comando utiliza colunas, não linhas
+        // colocar o segundo argumento em true resolve, mas não é indicado pela MDN por compatibilidade
         gl.uniformMatrix3fv(matrixLoc, false, matrix);
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, c.tex);
