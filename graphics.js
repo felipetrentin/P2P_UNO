@@ -5,7 +5,7 @@ canvas.height = canvas.clientHeight;
 gl.viewport(0, 0, canvas.width, canvas.height);
 gl.clearColor(0.0, 0.176, 0.02, 1.0);
 
-// shaders
+// shaders atualizados para suportar alpha
 const vsSource = `#version 300 es
 in vec2 a_position;
 in vec2 a_texcoord;
@@ -39,7 +39,9 @@ void main() {
         spriteOffset.y + (1.0 - v_texcoord.y) * u_spriteSize.y
     );
     
-    outColor = texture(u_texture, spriteCoord);
+    vec4 texColor = texture(u_texture, spriteCoord);
+    
+    outColor = texColor;
 }`;
 
 function createShader(gl, type, source) {
@@ -116,7 +118,7 @@ const SPRITE_SIZE = {
 // Textura única do sprite sheet
 let spriteSheetTexture = null;
 
-// Carrega a textura do sprite sheet
+// Carrega a textura do sprite sheet com suporte a alpha
 function loadSpriteSheetTexture(gl, image) {
     const tex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, tex);
@@ -140,7 +142,6 @@ function createCardIdBuffer(gl, cards) {
             cardIds[i * 6 + j] = cardId;
         }
     }
-    console.log(cardIds);
     const buffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, cardIds, gl.STATIC_DRAW);
@@ -172,6 +173,11 @@ function loadSpriteSheet() {
     image.onload = function() {
         spriteSheetTexture = loadSpriteSheetTexture(gl, image);
         cardIdBuffer = createCardIdBuffer(gl, cards);
+        
+        // Habilita blending para transparência
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        
         draw();
     };
     
