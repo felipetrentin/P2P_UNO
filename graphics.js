@@ -102,6 +102,10 @@ gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
     1, 1
 ]), gl.STATIC_DRAW);
 
+
+// buffer que armazena qual carta deve ser desenhada naquele momento
+const cardIdBuffer = gl.createBuffer();
+
 // tamanho da carta
 const CARD_W = 280;
 const CARD_H = 400;
@@ -131,23 +135,6 @@ function loadSpriteSheetTexture(gl, image) {
     return tex;
 }
 
-// Cria buffer de IDs das cartas
-function createCardIdBuffer(gl, cards) {
-    const cardIds = new Float32Array(cards.length * 6); // 6 vértices por carta
-    
-    for (let i = 0; i < cards.length; i++) {
-        const cardId = cards[i].idx;
-        // Cada vértice tem o mesmo ID da carta
-        for (let j = 0; j < 6; j++) {
-            cardIds[i * 6 + j] = cardId;
-        }
-    }
-    const buffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-    gl.bufferData(gl.ARRAY_BUFFER, cardIds, gl.STATIC_DRAW);
-    return buffer;
-}
-
 // exemplo: gerar cartas
 let cards = [];
 let idx = 0;
@@ -157,14 +144,12 @@ for (let i = 0; i < 2; i++) {
             x: i * 0.1,
             y: j * 0.2,
             idx: idx % (SPRITE_SHEET_COLS * SPRITE_SHEET_ROWS), // ID da carta no sprite sheet
-            rotation: 0
+            rotation: 0,
+            zIndex: idx // Adiciona zIndex para controle de profundidade
         });
         idx++;
     }
 }
-
-// Buffer para os IDs das cartas
-let cardIdBuffer = null;
 
 // Carrega a imagem do sprite sheet
 function loadSpriteSheet() {
@@ -172,7 +157,6 @@ function loadSpriteSheet() {
     image.crossOrigin = "anonymous";
     image.onload = function() {
         spriteSheetTexture = loadSpriteSheetTexture(gl, image);
-        cardIdBuffer = createCardIdBuffer(gl, cards);
         
         // Habilita blending para transparência
         gl.enable(gl.BLEND);
@@ -196,6 +180,18 @@ loadSpriteSheet();
 
 let dragCard = null, dragOffset = { x: 0, y: 0 };
 
+// Função para mover carta para o topo (maior zIndex)
+function bringCardToTop(card) {
+    // Encontra o maior zIndex atual
+    const maxZIndex = Math.max(...cards.map(c => c.zIndex));
+    
+    // Define o zIndex da carta como maior que todos os outros
+    card.zIndex = maxZIndex + 1;
+    
+    // Reordena o array por zIndex (opcional, para organização)
+    cards.sort((a, b) => a.zIndex - b.zIndex);
+}
+
 // Função auxiliar para obter coordenadas normalizadas
 function getNormalizedCoordinates(clientX, clientY) {
     const mx = ((2 * clientX) / canvas.width) - 1;
@@ -208,13 +204,16 @@ function findCardAt(x, y) {
     const scr_card_w = (CARD_W / canvas.width);
     const scr_card_h = (CARD_H / canvas.height);
     
-    for (let i = cards.length - 1; i >= 0; i--) {
-        const c = cards[i];
+    // Procura da carta com maior zIndex para a menor (de cima para baixo)
+    const sortedCards = [...cards].sort((a, b) => b.zIndex - a.zIndex);
+    
+    for (let i = 0; i < sortedCards.length; i++) {
+        const c = sortedCards[i];
         if (
             x > c.x - scr_card_w / 2 && x < c.x + scr_card_w / 2 &&
             y > c.y - scr_card_h / 2 && y < c.y + scr_card_h / 2
         ) {
-            return { card: c, index: i };
+            return { card: c, index: cards.indexOf(c) };
         }
     }
     return null;
@@ -223,13 +222,17 @@ function findCardAt(x, y) {
 // Eventos de mouse
 canvas.addEventListener('mousedown', (e) => {
     const { mx, my } = getNormalizedCoordinates(e.clientX, e.clientY);
-    console.log("clicked", mx, my, e);
+    //console.log("clicked", mx, my, e);
     
     const found = findCardAt(mx, my);
     if (found) {
         dragCard = found.card;
         dragOffset.x = mx - found.card.x;
         dragOffset.y = my - found.card.y;
+        
+        // Move a carta para o topo quando clicada
+        bringCardToTop(found.card);
+        draw();
     }
 });
 
@@ -259,6 +262,10 @@ canvas.addEventListener('touchstart', (e) => {
         dragCard = found.card;
         dragOffset.x = mx - found.card.x;
         dragOffset.y = my - found.card.y;
+        
+        // Move a carta para o topo quando tocada
+        bringCardToTop(found.card);
+        draw();
     }
 });
 
@@ -319,11 +326,7 @@ function transpose3x3(m) {
     ];
 }
 
-// draw function
-function draw() {
-    if (!spriteSheetTexture || !cardIdBuffer) return; // Aguarda carregamento
-    
-    gl.clear(gl.COLOR_BUFFER_BIT);
+function setupGraphics(){
     gl.useProgram(program);
 
     gl.enableVertexAttribArray(positionLoc);
@@ -334,16 +337,42 @@ function draw() {
     gl.bindBuffer(gl.ARRAY_BUFFER, texBuffer);
     gl.vertexAttribPointer(texcoordLoc, 2, gl.FLOAT, false, 0, 0);
 
-    gl.enableVertexAttribArray(cardIdLoc);
-    gl.bindBuffer(gl.ARRAY_BUFFER, cardIdBuffer);
-    gl.vertexAttribPointer(cardIdLoc, 1, gl.FLOAT, false, 0, 0);
+    // selecionamos a textura uma vez e ela sempre será usada.
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, spriteSheetTexture);
+    gl.uniform1i(textureLoc, 0);
 
     // Define as uniforms do sprite sheet
     gl.uniform2f(spriteSheetSizeLoc, SPRITE_SHEET_COLS, SPRITE_SHEET_ROWS);
     gl.uniform2f(spriteSizeLoc, SPRITE_SIZE.x, SPRITE_SIZE.y);
 
-    for (const c of cards) {
+    gl.enableVertexAttribArray(cardIdLoc);
+}
+
+// draw function
+function draw() {
+    if (!spriteSheetTexture) return; // Aguarda carregamento
+    
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    // Ordena as cartas por zIndex para desenhar as de menor zIndex primeiro
+    const sortedCards = [...cards].sort((a, b) => a.zIndex - b.zIndex); 
+
+    // Agora desenha cada carta
+    for (const c of sortedCards) {
         let scale = [CARD_W / canvas.width, CARD_H / canvas.height];
+
+        const cardIds = new Float32Array(6);
+
+        for (let j = 0; j < 6; j++) {
+            cardIds[j] = c.idx;
+        }
+
+        // Envia todos os IDs para o buffer UMA ÚNICA VEZ
+        console.log(cardIds);
+        gl.bindBuffer(gl.ARRAY_BUFFER, cardIdBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, cardIds, gl.DYNAMIC_DRAW);
+        gl.vertexAttribPointer(cardIdLoc, 1, gl.FLOAT, false, 0, 0);
 
         let sm = [
             scale[0], 0, 0,
@@ -359,9 +388,10 @@ function draw() {
         let matrix = transpose3x3(multiply(tm, multiply(rm, multiply(sm, tm_toCenter))));
 
         gl.uniformMatrix3fv(matrixLoc, false, matrix);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, spriteSheetTexture); // Usa a textura única
-        gl.uniform1i(textureLoc, 0);
+        
+        // Desenha apenas os 6 vértices desta carta
         gl.drawArrays(gl.TRIANGLES, 0, 6);
     }
 }
+
+setupGraphics();
