@@ -1,4 +1,3 @@
-
 const canvas = document.getElementById('glcanvas');
 const gl = canvas.getContext('webgl2');
 canvas.width = canvas.clientWidth;
@@ -10,21 +9,37 @@ gl.clearColor(0.0, 0.176, 0.02, 1.0);
 const vsSource = `#version 300 es
 in vec2 a_position;
 in vec2 a_texcoord;
+in float a_cardId;
 uniform mat3 u_matrix;
 out vec2 v_texcoord;
+out float v_cardId;
 void main() {
     vec3 pos = u_matrix * vec3(a_position,1.0);
     gl_Position = vec4(pos.xy,0,1);
     v_texcoord = a_texcoord;
+    v_cardId = a_cardId;
 }`;
 
 const fsSource = `#version 300 es
 precision mediump float;
 in vec2 v_texcoord;
+in float v_cardId;
 uniform sampler2D u_texture;
+uniform vec2 u_spriteSheetSize;
+uniform vec2 u_spriteSize;
 out vec4 outColor;
 void main() {
-    outColor = texture(u_texture, vec2(v_texcoord.x, 1.0 - v_texcoord.y));
+    float spriteId = floor(v_cardId);
+    float col = mod(spriteId, u_spriteSheetSize.x);
+    float row = floor(spriteId / u_spriteSheetSize.x);
+    
+    vec2 spriteOffset = vec2(col * u_spriteSize.x, row * u_spriteSize.y);
+    vec2 spriteCoord = vec2(
+        spriteOffset.x + v_texcoord.x * u_spriteSize.x,
+        spriteOffset.y + (1.0 - v_texcoord.y) * u_spriteSize.y
+    );
+    
+    outColor = texture(u_texture, spriteCoord);
 }`;
 
 function createShader(gl, type, source) {
@@ -55,8 +70,11 @@ const program = createProgram(gl, vertexShader, fragmentShader);
 // look up locations
 const positionLoc = gl.getAttribLocation(program, 'a_position');
 const texcoordLoc = gl.getAttribLocation(program, 'a_texcoord');
+const cardIdLoc = gl.getAttribLocation(program, 'a_cardId');
 const matrixLoc = gl.getUniformLocation(program, 'u_matrix');
 const textureLoc = gl.getUniformLocation(program, 'u_texture');
+const spriteSheetSizeLoc = gl.getUniformLocation(program, 'u_spriteSheetSize');
+const spriteSizeLoc = gl.getUniformLocation(program, 'u_spriteSize');
 
 // create quad buffer
 const posBuffer = gl.createBuffer();
@@ -86,38 +104,50 @@ gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
 const CARD_W = 280;
 const CARD_H = 400;
 
-// gera textura WebGL para uma carta
-function createCardTexture(gl, color, text, idx = 0) {
-    // cria canvas temporário
-    const c = document.createElement('canvas');
-    c.width = CARD_W;
-    c.height = CARD_H;
-    const ctx = c.getContext('2d');
+// Configuração do sprite sheet
+const SPRITE_SHEET_COLS = 14;
+const SPRITE_SHEET_ROWS = 4;
+const SPRITE_SHEET_SIZE = { cols: SPRITE_SHEET_COLS, rows: SPRITE_SHEET_ROWS };
+const SPRITE_SIZE = {
+    x: 1.0 / SPRITE_SHEET_COLS,
+    y: 1.0 / SPRITE_SHEET_ROWS
+};
 
-    // desenha carta
-    drawCardFace(ctx, 0, 0, CARD_W, CARD_H, text || 'X', color || 'orange', idx);
+// Textura única do sprite sheet
+let spriteSheetTexture = null;
 
-
-    //window.open(c.toDataURL('image/png'), '_blank');
-
-
-    // cria textura WebGL
+// Carrega a textura do sprite sheet
+function loadSpriteSheetTexture(gl, image) {
     const tex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
     gl.generateMipmap(gl.TEXTURE_2D);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-
     return tex;
 }
 
-// exemplo: gerar cartas
-const colors = ['red', 'green', 'blue', 'yellow'];
-const nums = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+// Cria buffer de IDs das cartas
+function createCardIdBuffer(gl, cards) {
+    const cardIds = new Float32Array(cards.length * 6); // 6 vértices por carta
+    
+    for (let i = 0; i < cards.length; i++) {
+        const cardId = cards[i].idx;
+        // Cada vértice tem o mesmo ID da carta
+        for (let j = 0; j < 6; j++) {
+            cardIds[i * 6 + j] = cardId;
+        }
+    }
+    console.log(cardIds);
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, cardIds, gl.STATIC_DRAW);
+    return buffer;
+}
 
+// exemplo: gerar cartas
 let cards = [];
 let idx = 0;
 for (let i = 0; i < 2; i++) {
@@ -125,13 +155,35 @@ for (let i = 0; i < 2; i++) {
         cards.push({
             x: i * 0.1,
             y: j * 0.2,
-            idx: idx,
-            rotation: 0,
-            tex: createCardTexture(gl, colors[idx % colors.length], nums[idx % nums.length], idx)
+            idx: idx % (SPRITE_SHEET_COLS * SPRITE_SHEET_ROWS), // ID da carta no sprite sheet
+            rotation: 0
         });
         idx++;
     }
 }
+
+// Buffer para os IDs das cartas
+let cardIdBuffer = null;
+
+// Carrega a imagem do sprite sheet
+function loadSpriteSheet() {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = function() {
+        spriteSheetTexture = loadSpriteSheetTexture(gl, image);
+        cardIdBuffer = createCardIdBuffer(gl, cards);
+        draw();
+    };
+    
+    image.onerror = function() {
+        console.error('Erro ao carregar sprite sheet: sprites.png');
+    };
+    
+    image.src = 'sprites.png';
+}
+
+// Inicialização
+loadSpriteSheet();
 
 //lógica de manipulação de cartas
 // coordenadas em screnspace, 0,0 é no centro, negativo para esquerda e para baixo.
@@ -263,6 +315,8 @@ function transpose3x3(m) {
 
 // draw function
 function draw() {
+    if (!spriteSheetTexture || !cardIdBuffer) return; // Aguarda carregamento
+    
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.useProgram(program);
 
@@ -274,8 +328,15 @@ function draw() {
     gl.bindBuffer(gl.ARRAY_BUFFER, texBuffer);
     gl.vertexAttribPointer(texcoordLoc, 2, gl.FLOAT, false, 0, 0);
 
+    gl.enableVertexAttribArray(cardIdLoc);
+    gl.bindBuffer(gl.ARRAY_BUFFER, cardIdBuffer);
+    gl.vertexAttribPointer(cardIdLoc, 1, gl.FLOAT, false, 0, 0);
+
+    // Define as uniforms do sprite sheet
+    gl.uniform2f(spriteSheetSizeLoc, SPRITE_SHEET_COLS, SPRITE_SHEET_ROWS);
+    gl.uniform2f(spriteSizeLoc, SPRITE_SIZE.x, SPRITE_SIZE.y);
+
     for (const c of cards) {
-        //console.log(c)
         let scale = [CARD_W / canvas.width, CARD_H / canvas.height];
 
         let sm = [
@@ -289,17 +350,12 @@ function draw() {
 
         let tm = translationMatrix(c.x, c.y);
 
-        //let matrix = transpose3x3(multiply(tm, multiply(rm, multiply(sm, tm_toCenter))))
         let matrix = transpose3x3(multiply(tm, multiply(rm, multiply(sm, tm_toCenter))));
 
-        // precisamos transpor pois esse comando utiliza colunas, não linhas
-        // colocar o segundo argumento em true resolve, mas não é indicado pela MDN por compatibilidade
         gl.uniformMatrix3fv(matrixLoc, false, matrix);
         gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, c.tex);
+        gl.bindTexture(gl.TEXTURE_2D, spriteSheetTexture); // Usa a textura única
         gl.uniform1i(textureLoc, 0);
         gl.drawArrays(gl.TRIANGLES, 0, 6);
     }
 }
-
-draw();
