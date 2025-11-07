@@ -325,28 +325,42 @@ function transpose3x3(m) {
         m[2], m[5], m[8],
     ];
 }
+// Globalmente
+const cardVAO = gl.createVertexArray();
 
 function setupGraphics(){
     gl.useProgram(program);
 
+    // 1. Vincule o VAO
+    gl.bindVertexArray(cardVAO);
+
+    // 2. Configure todos os atributos DENTRO do VAO
+    
+    // Posição
     gl.enableVertexAttribArray(positionLoc);
     gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
     gl.vertexAttribPointer(positionLoc, 2, gl.FLOAT, false, 0, 0);
 
+    // Coordenada de Textura
     gl.enableVertexAttribArray(texcoordLoc);
     gl.bindBuffer(gl.ARRAY_BUFFER, texBuffer);
     gl.vertexAttribPointer(texcoordLoc, 2, gl.FLOAT, false, 0, 0);
+    
+    // ID da Carta (VAO armazena o ponteiro, mas o buffer de dados mudará!)
+    gl.enableVertexAttribArray(cardIdLoc);
+    gl.bindBuffer(gl.ARRAY_BUFFER, cardIdBuffer);
+    gl.vertexAttribPointer(cardIdLoc, 1, gl.FLOAT, false, 0, 0);
 
-    // selecionamos a textura uma vez e ela sempre será usada.
+    // Selecionamos a textura uma vez
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, spriteSheetTexture);
     gl.uniform1i(textureLoc, 0);
 
-    // Define as uniforms do sprite sheet
     gl.uniform2f(spriteSheetSizeLoc, SPRITE_SHEET_COLS, SPRITE_SHEET_ROWS);
     gl.uniform2f(spriteSizeLoc, SPRITE_SIZE.x, SPRITE_SIZE.y);
-
-    gl.enableVertexAttribArray(cardIdLoc);
+    
+    // 3. Desvincule o VAO (opcional, mas boa prática)
+    gl.bindVertexArray(null); 
 }
 
 // draw function
@@ -354,6 +368,9 @@ function draw() {
     if (!spriteSheetTexture) return; // Aguarda carregamento
     
     gl.clear(gl.COLOR_BUFFER_BIT);
+
+    // 1. Vincule o VAO: Restaura o estado completo dos atributos (pos, texcoord, cardId)
+    gl.bindVertexArray(cardVAO);
 
     // Ordena as cartas por zIndex para desenhar as de menor zIndex primeiro
     const sortedCards = [...cards].sort((a, b) => a.zIndex - b.zIndex); 
@@ -368,30 +385,32 @@ function draw() {
             cardIds[j] = c.idx;
         }
 
-        // Envia todos os IDs para o buffer UMA ÚNICA VEZ
-        console.log(cardIds);
+        // 2. Atualiza o Buffer de IDs
+        // O bindBuffer é necessário porque estamos MUDANDO o CONTEÚDO do buffer,
+        // mesmo que o ponteiro (gl.vertexAttribPointer) já tenha sido definido pelo VAO.
         gl.bindBuffer(gl.ARRAY_BUFFER, cardIdBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, cardIds, gl.DYNAMIC_DRAW);
-        gl.vertexAttribPointer(cardIdLoc, 1, gl.FLOAT, false, 0, 0);
 
+        // 3. Calcula e Envia a Matriz (Uniform)
         let sm = [
             scale[0], 0, 0,
             0, scale[1], 0,
             0, 0, 1];
 
         let tm_toCenter = translationMatrix(-0.5, -0.5);
-
         let rm = rotationMatrix(0);
-
         let tm = translationMatrix(c.x, c.y);
 
         let matrix = transpose3x3(multiply(tm, multiply(rm, multiply(sm, tm_toCenter))));
 
         gl.uniformMatrix3fv(matrixLoc, false, matrix);
         
-        // Desenha apenas os 6 vértices desta carta
+        // 4. Desenha 6 vertices (1 carta)
         gl.drawArrays(gl.TRIANGLES, 0, 6);
     }
+    
+    // 5. Desvincule o VAO (boa prática)
+    gl.bindVertexArray(null);
 }
 
 setupGraphics();
