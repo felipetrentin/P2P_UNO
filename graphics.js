@@ -114,6 +114,7 @@ const CARD_H = 400;
 const SPRITE_SHEET_COLS = 14;
 const SPRITE_SHEET_ROWS = 4;
 const SPRITE_SHEET_SIZE = { cols: SPRITE_SHEET_COLS, rows: SPRITE_SHEET_ROWS };
+
 const SPRITE_SIZE = {
     x: 1.0 / SPRITE_SHEET_COLS,
     y: 1.0 / SPRITE_SHEET_ROWS
@@ -133,22 +134,6 @@ function loadSpriteSheetTexture(gl, image) {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     return tex;
-}
-
-// exemplo: gerar cartas
-let cards = [];
-let idx = 0;
-for (let i = 0; i < 2; i++) {
-    for (let j = 0; j < 5; j++) { // 5 cartas por linha
-        cards.push({
-            x: i * 0.1,
-            y: j * 0.2,
-            idx: idx % (SPRITE_SHEET_COLS * SPRITE_SHEET_ROWS), // ID da carta no sprite sheet
-            rotation: 0,
-            zIndex: idx // Adiciona zIndex para controle de profundidade
-        });
-        idx++;
-    }
 }
 
 // Carrega a imagem do sprite sheet
@@ -398,7 +383,7 @@ function draw() {
             0, 0, 1];
 
         let tm_toCenter = translationMatrix(-0.5, -0.5);
-        let rm = rotationMatrix(0);
+        let rm = rotationMatrix(c.rotation);
         let tm = translationMatrix(c.x, c.y);
 
         let matrix = transpose3x3(multiply(tm, multiply(rm, multiply(sm, tm_toCenter))));
