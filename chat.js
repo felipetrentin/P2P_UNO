@@ -39,13 +39,16 @@ messageInput.onkeypress = (e) => {
 };
 
 function sendChatMessage() {
-    const chatChannel = dataChannels.get('chat');
     const message = messageInput.value.trim();
-    if (message && chatChannel && chatChannel.readyState === 'open') {
-        chatChannel.send(message);
-        log(`Você: ${message}`, 'local');
-        messageInput.value = '';
-    }
+    dataChannels.forEach((channel) => {
+        let chatChannel = channel.get('chat');
+        console.log("mandando para ", chatChannel);
+        if (message && chatChannel && chatChannel.readyState === 'open') {
+            chatChannel.send(message);
+            log(`Você: ${message}`, 'local');
+            messageInput.value = '';
+        }
+    });
 }
 
 // --- Data Channel do chat ---

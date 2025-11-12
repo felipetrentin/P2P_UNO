@@ -3,13 +3,15 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>Cartas UNO WebGL</title>
+    <title>UNO WebGL</title>
     <style>
         html,
         body {
             height: 100%;
             margin: 0;
-            font-family: system-ui, Segoe UI, Roboto, Arial
+            font-family: system-ui, Segoe UI, Roboto, Arial;
+            background-color: #f0f2f5;
+            /* Fundo leve para destaque do painel */
         }
 
         .wrap {
@@ -17,75 +19,181 @@
             gap: 12px;
             height: 100%;
             box-sizing: border-box;
-            overflow-y: scroll;
+            padding: 12px;
+            /* Adiciona um padding ao redor do wrap */
         }
 
         #glcanvas {
-
             display: block;
-            width: 80%;
+            flex-grow: 1;
+            /* Permite que o canvas ocupe o espaço restante */
+            min-width: 60%;
+            /* Garante que o canvas não encolha demais */
+            background: #000;
+            border-radius: 8px;
+            /* Cantos arredondados */
+            box-shadow: 0 4px 12px rgba(0, 0, 0, .3);
         }
 
         .panel {
             width: 320px;
             display: flex;
             flex-direction: column;
-            gap: 8px
+            gap: 12px;
+            /* Aumenta a distância entre as seções */
+            height: 100%;
+            /* CRUCIAL: O painel precisa ter altura total para o justify-content funcionar */
+            box-sizing: border-box;
         }
 
-        .panel .info {
+        .panel .section {
             background: #fff;
-            padding: 10px;
-            border-radius: 8px;
-            box-shadow: 0 2px 6px rgba(0, 0, 0, .2)
+            padding: 15px;
+            /* Mais preenchimento interno */
+            border-radius: 10px;
+            /* Cantos mais arredondados */
+            box-shadow: 0 2px 8px rgba(0, 0, 0, .1);
+            /* Sombra mais suave */
         }
 
-        .chat {
+        /* ESTILO PARA LISTA DE PLAYERS */
+        .players-section h2 {
+            color: #277;
+            margin-top: 0;
+            margin-bottom: 10px;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 5px;
+        }
+
+        #player-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            /* Espaço entre os jogadores */
+        }
+
+        #player-list li {
+            background: #f4f7f9;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-weight: 500;
+            color: #333;
+            border-left: 4px solid #277;
+            /* Linha de destaque para cada jogador */
+            transition: background-color 0.2s;
+        }
+
+        #player-list li:hover {
+            background-color: #e6e9ec;
+        }
+
+        /* CHAT NO FINAL DA COLUNA */
+        .chat-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: auto;
+            /* Truque do Flexbox para empurrar o elemento para o final */
             background: #fff;
             padding: 10px;
             border-radius: 8px;
             box-shadow: 0 2px 6px rgba(0, 0, 0, .2);
+        }
+
+        .chat {
+            /* Remove o background e a sombra, pois agora o .chat-controls as têm */
+            padding: 0;
+            border-radius: 0;
+            box-shadow: none;
             height: 200px;
-            overflow-y: scroll
+            overflow-y: scroll;
+            margin-bottom: 5px;
+            /* Pequeno espaço acima do input */
         }
 
         button {
-            padding: 8px;
+            padding: 10px;
+            /* Mais preenchimento */
             border-radius: 6px;
             border: 0;
             background: #277;
-            color: #fff
+            color: #fff;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.2s;
         }
 
-        .message-local { text-align: right; color: blue; }
-        .message-remote { text-align: left; color: green; }
+        button:hover:not(:disabled) {
+            background: #1a5c5c;
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        input[type="text"],
+        select {
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+            width: 100%;
+            /* Ocupa a largura total do .chat-controls */
+            box-sizing: border-box;
+        }
+
+        .message-local {
+            text-align: right;
+            color: #277;
+            /* Cor azul-esverdeada mais suave */
+            margin: 4px 0;
+        }
+
+        .message-remote {
+            text-align: left;
+            color: #d9534f;
+            /* Um tom de vermelho/laranja para contraste */
+            margin: 4px 0;
+        }
     </style>
+    <link rel="preload" href="http://127.0.0.1:5500/sprites.png" as="image" crossorigin>
 </head>
 
 <body>
     <div class="wrap">
         <canvas id="glcanvas"></canvas>
         <div class="panel">
-            <div class="info">
-                <h3>Instruções</h3>
-                <ul>
-                    <li>Arraste as cartas com o mouse (ou toque) — segurando e movendo.</li>
-                    <li>As cartas são sprites extraídas de um sprite sheet gerado dinamicamente.</li>
-                    <li>Cliques rápidos selecionam a carta; soltando-a coloca onde estava o ponteiro.</li>
-                </ul>
-                <button id="shuffle">Embaralhar/Reposicionar</button>
+            <div class="section">
+                <h2>Configuração</h2>
+                <select id="user-type">
+                    <option value="">Selecione o tipo de usuário</option>
+                    <option value="host">Host</option>
+                    <option value="player">Player</option>
+                </select>
+
+                <div id="host-section" style="display:none;">
+                    <button id="create-room">Criar Sala</button>
+                </div>
+
+                <div id="player-section" style="display:none;">
+                    <input type="text" id="room-id" placeholder="ID da Sala">
+                    <button id="join-room">Entrar na Sala</button>
+                </div>
             </div>
-            <div class="info">
-                <strong>Observações:</strong>
-                <p>Arquivo autônomo: salve como <code>cartas.html</code> e abra no navegador.</p>
+
+            <div class="section players-section">
+                <h2>Jogadores Conectados</h2>
+                <ul id="player-list"></ul>
             </div>
-            <div class="info">
-                <strong>Conexão</strong>
-                <button id="connect-button">Conectar</button>
+
+            <div class="chat-controls">
+                <div class="chat" id="chat-container"></div>
+                <input type="text" id="message-input" placeholder="Digite sua mensagem...">
+                <button id="send-button" disabled>Enviar</button>
             </div>
-            <div class="chat" id="chat-container"></div>
-            <input type="text" id="message-input" placeholder="Digite sua mensagem..." style="width: 80%;">
-            <button id="send-button" disabled>Enviar</button>
         </div>
     </div>
     <script src="chat.js" type="text/javascript"></script>
@@ -93,7 +201,7 @@
     <script src="cards_comm.js" type="text/javascript"></script>
     <script src="comms.js" type="text/javascript"></script>
     <script src="graphics.js" type="text/javascript" defer></script>
-    
+
 </body>
 
 </html>
