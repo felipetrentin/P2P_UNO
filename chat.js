@@ -40,20 +40,20 @@ messageInput.onkeypress = (e) => {
 
 function sendChatMessage() {
     const message = messageInput.value.trim();
+    log(`Você: ${message}`, 'local');
+    messageInput.value = '';
     dataChannels.forEach((channel) => {
         let chatChannel = channel.get('chat');
         console.log("mandando para ", chatChannel);
         if (message && chatChannel && chatChannel.readyState === 'open') {
             chatChannel.send(message);
-            log(`Você: ${message}`, 'local');
-            messageInput.value = '';
         }
     });
 }
 
 // --- Data Channel do chat ---
 
-function setupChatDataChannel(channel) {
+function setupChatDataChannel(channel, playerId) {
     channel.onopen = () => {
         log('DataChannel pronto. Chat ativado!', 'system');
         enableChat(true);
@@ -65,7 +65,8 @@ function setupChatDataChannel(channel) {
     };
 
     channel.onmessage = (event) => {
-        log(`Par Remoto: ${event.data}`, 'remote');
+        const playerMsgId = playerId;
+        log(`${playerMsgId}: ${event.data}`, 'remote');
     };
 }
 

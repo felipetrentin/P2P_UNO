@@ -220,6 +220,8 @@ function handleJoinApproved(message) {
     if (userType === 'player' && message.targetUserId === myId) {
         console.log('Entrada na sala aprovada!');
         enableChat(false); // Chat será habilitado quando a conexão WebRTC estabelecer
+        connectedPlayers.add(message.userId + "(Host)");
+        updatePlayerList(Array.from(connectedPlayers));
     }
 }
 
@@ -243,6 +245,11 @@ function handlePlayerJoined(message) {
     // Player: outro player entrou na sala
     if (userType === 'player' && playerId !== myId) {
         console.log(`Player ${playerId} entrou na sala`);
+        // Adicionar à lista e criar conexão
+        connectedPlayers.add(playerId);
+        updatePlayerList(Array.from(connectedPlayers));
+        createPeerConnectionForPlayer(playerId);
+        initiateDataChannels(playerId);
     }
 }
 
@@ -386,36 +393,38 @@ function createPeerConnectionForPlayer(playerId) {
         }
     };
 
-    // Host cria Data Channels e oferta para o player
-    if (userType === 'host') {
-        createDataChannelsForPlayer(pc, playerId);
-        
-        // Criar e enviar oferta
-        setTimeout(async () => {
-            try {
-                const offer = await pc.createOffer();
-                await pc.setLocalDescription(offer);
-
-                sendMessage({
-                    type: 'offer',
-                    roomId: roomId,
-                    userId: myId,
-                    targetUserId: playerId,
-                    session: pc.localDescription
-                });
-                
-                console.log(`Oferta enviada para ${playerId}`);
-            } catch (err) {
-                console.error('Erro ao criar oferta:', err);
-                log('Erro ao criar oferta: ' + err.message, 'system');
-            }
-        }, 1000);
+    if(userType === "host"){
+        initiateDataChannels(playerId);
     }
 }
 
-function createDataChannelsForPlayer(pc, playerId) {
-    if (userType !== 'host') return;
-    
+function initiateDataChannels(playerId){
+    const pc = peerConnections.get(playerId);
+    peerConnections.set(playerId, pc);
+    createDataChannelsHostPlayer(pc, playerId);
+    // Criar e enviar oferta
+    setTimeout(async () => {
+        try {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+
+            sendMessage({
+                type: 'offer',
+                roomId: roomId,
+                userId: myId,
+                targetUserId: playerId,
+                session: pc.localDescription
+            });
+            
+            console.log(`Oferta enviada para ${playerId}`);
+        } catch (err) {
+            console.error('Erro ao criar oferta:', err);
+            log('Erro ao criar oferta: ' + err.message, 'system');
+        }
+    }, 1000);
+}
+
+function createDataChannelsHostPlayer(pc, playerId) {
     // Data Channel principal para chat
     const chatChannel = pc.createDataChannel('chat');
     setupDataChannel(chatChannel, playerId);
@@ -434,7 +443,7 @@ function createDataChannelsForPlayer(pc, playerId) {
     dataChannels.get(playerId).set('chat', chatChannel);
     dataChannels.get(playerId).set('updates', updatesChannel);
 }
-
+        
 function setupDataChannel(channel, playerId) {
     if (channel.label === 'chat') {
         setupChatDataChannel(channel, playerId);
@@ -464,15 +473,13 @@ function getHostId() {
 }
 
 function updatePlayerList(players) {
-    if (userType === 'host') {
-        playerList.innerHTML = '';
-        players.forEach(playerId => {
-            const li = document.createElement('li');
-            li.textContent = `Player: ${playerId}`;
-            li.id = `player-${playerId}`;
-            playerList.appendChild(li);
-        });
-    }
+    playerList.innerHTML = '';
+    players.forEach(playerId => {
+        const li = document.createElement('li');
+        li.textContent = `Player: ${playerId}`;
+        li.id = `player-${playerId}`;
+        playerList.appendChild(li);
+    });
 }
 
 function resetConnection() {

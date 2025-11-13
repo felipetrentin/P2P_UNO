@@ -1,7 +1,7 @@
 
 function setupUpdaterDataChannel(channel) {
     channel.onopen = () => {
-        console.log('DataChannel updater pronto!', 'system');
+        console.log('DataChannel updater pronto!');
     };
 
     channel.onclose = () => {
@@ -25,16 +25,18 @@ function setupUpdaterDataChannel(channel) {
 }
 
 function broadcastCardUpdate() {
-    const updatesChannel = dataChannels.get('updates');
-    if (updatesChannel) {
-        if (dragCard) {
-            const message = {
-                type: "move_card",
-                id: dragCard.idx,
-                x: dragCard.x,
-                y: dragCard.y
-            };
-            updatesChannel.send(JSON.stringify(message));
-        }
+    if (dragCard) {
+        const message = {
+            type: "move_card",
+            id: dragCard.idx,
+            x: dragCard.x,
+            y: dragCard.y
+        };
+        dataChannels.forEach((channel) => {
+            let updatesChannel = channel.get('updates');
+            if (updatesChannel) {
+                updatesChannel.send(JSON.stringify(message));
+            }
+        });
     }
 }
