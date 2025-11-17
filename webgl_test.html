@@ -188,11 +188,18 @@
                 <h2>Jogadores Conectados</h2>
                 <ul id="player-list"></ul>
             </div>
+            <div id="gameStatus" class="section">
+
+            </div>
+            <button id="game-start" onclick="startGame()" style="display:none;">Iniciar Jogo</button>
 
             <div class="chat-controls">
                 <div class="chat" id="chat-container"></div>
                 <input type="text" id="message-input" placeholder="Digite sua mensagem...">
                 <button id="send-button" disabled>Enviar</button>
+                <select id="channel-selector" disabled>
+                    <option value="all">Todos os jogadores</option>
+                </select>
             </div>
         </div>
     </div>

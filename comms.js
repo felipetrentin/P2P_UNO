@@ -26,14 +26,22 @@ const playerList = document.getElementById('player-list');
 const playerSectionDiv = document.getElementById('player-section');
 const hostSectionDiv = document.getElementById('host-section');
 
+const gameStartBtn = document.getElementById('game-start');
+
 // --- Interface de Usuário ---
 
 // Mostrar/ocultar elementos baseado no tipo de usuário
 userTypeSelect.onchange = () => {
+    updateGameConfig();
+};
+
+function updateGameConfig(){
     const type = userTypeSelect.value;
     playerSectionDiv.style.display = (type === 'player' ? 'block' : 'none');
     hostSectionDiv.style.display = (type === 'host' ? 'block' : 'none');
-};
+    hostSectionDiv.style.display = (type === 'host' ? 'block' : 'none');
+    gameStartBtn.style.display = (type === 'host' ? 'block' : 'none');
+}
 
 createRoomButton.onclick = () => {
     userType = 'host';
@@ -440,6 +448,12 @@ function createDataChannelsHostPlayer(pc, playerId) {
     if (!dataChannels.has(playerId)) {
         dataChannels.set(playerId, new Map());
     }
+
+    if(userType === "host"){
+        const eventsChannel = pc.createDataChannel('game_events');
+        setupDataChannel(eventsChannel, playerId);
+        dataChannels.get(playerId).set('game_events', eventsChannel);
+    }
     dataChannels.get(playerId).set('chat', chatChannel);
     dataChannels.get(playerId).set('updates', updatesChannel);
 }
@@ -449,6 +463,8 @@ function setupDataChannel(channel, playerId) {
         setupChatDataChannel(channel, playerId);
     } else if (channel.label === 'updates') {
         setupUpdaterDataChannel(channel, playerId);
+    } else if (channel.label === 'game_events') {
+        setupEventsDataChannel(channel, playerId);
     }
 }
 
@@ -500,6 +516,7 @@ function resetConnection() {
     dataChannels.clear();
     
     connectedPlayers.clear();
+    updatePlayerList(Array.from(connectedPlayers));
     
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.close();
@@ -520,3 +537,5 @@ window.addEventListener('beforeunload', () => {
         });
     }
 });
+
+updateGameConfig();

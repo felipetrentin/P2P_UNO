@@ -107,8 +107,8 @@ gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
 const cardIdBuffer = gl.createBuffer();
 
 // tamanho da carta
-const CARD_W = 280;
-const CARD_H = 400;
+const CARD_W = 280/1.5;
+const CARD_H = 400/1.5;
 
 // Configuração do sprite sheet
 const SPRITE_SHEET_COLS = 14;
