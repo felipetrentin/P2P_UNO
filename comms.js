@@ -228,7 +228,7 @@ function handleJoinApproved(message) {
     if (userType === 'player' && message.targetUserId === myId) {
         console.log('Entrada na sala aprovada!');
         enableChat(false); // Chat será habilitado quando a conexão WebRTC estabelecer
-        connectedPlayers.add(message.userId + "(Host)");
+        connectedPlayers.add(message.userId + " (Host)");
         updatePlayerList(Array.from(connectedPlayers));
     }
 }
@@ -480,7 +480,6 @@ function sendMessage(message) {
 }
 
 function getHostId() {
-    // Em uma implementação real, você precisaria rastrear quem é o host
     // Por simplicidade, assumimos que o primeiro peer connection é com o host
     if (userType === 'player' && peerConnections.size > 0) {
         return Array.from(peerConnections.keys())[0];

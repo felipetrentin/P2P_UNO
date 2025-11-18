@@ -24,6 +24,9 @@ const cardIndex = [
     "backside_card" // o pimentão verde
 ];
 
+//game card é a carta atual de jogo.
+let game_card_type = null
+
 
 // gerar cartas
 let cards = [];
@@ -174,9 +177,7 @@ function dealInitialCards(amount = 7) {
     for (let i = 0; i < amount; i++) {
         players.forEach(pId => {
             let card = buyCard();
-            let hand = hands[pId];
             if (card){
-                hand.push(card);
                 dealCard(pId, card);
             }
         });
@@ -213,6 +214,9 @@ function drawInitialDiscard() {
 
 
 function startGame() {
+    // precisa ser host
+    if(userType !== "host") return;
+
     console.log("Iniciando partida...");
     gameStartBtn.disabled = true;
     partyPlayers = getPlayerList();
@@ -244,20 +248,24 @@ function playerActionCallback(player, playedCard) {
     const hand = hands[player];
 
     // 2. Jogador não tem essa carta
-    if (!hand.includes(playedCard)) {
+    const cardObject = hand.find(item => item.card === playedCard);
+    if (!cardObject) {
         console.warn("Jogador não possui essa carta");
         return;
     }
 
     // 3. Verifica se a jogada é válida
     if (!canPlayCard(playedCard, getDiscardTop())) {
-        console.warn("Jogada inválida → jogador compra carta");
-        dealCard(player);
+        console.warn("Jogada inválida → jogador compra carta e perde a vez");
+        dealCard(player, buyCard());
+        advanceTurn();
+        broadcastGameState();
         return;
     }
 
     // 4. Remove a carta da mão
-    hand.splice(hand.indexOf(playedCard), 1);
+    removeCard(cardObject);
+    hand.splice(hand.indexOf(cardObject), 1);
     discardPile.push(playedCard);
     forcedColor = null;
 
@@ -274,45 +282,30 @@ function playerActionCallback(player, playedCard) {
     // +2
     if (value === "plus2") {
         pendingDraw += 2;
-        advanceTurn();
-        broadcastGameState();
-        return;
-    }
+    }else
 
     // +4
     if (playedCard === "wild_plus4") {
         pendingDraw += 4;
         requestColorChoice(player);
-        advanceTurn();
-        broadcastGameState();
-        return;
-    }
+    }else
 
     // Wild normal
     if (playedCard === "wild") {
         requestColorChoice(player);
-        advanceTurn();
-        broadcastGameState();
-        return;
-    }
+    }else
 
     // Reverse
     if (value === "reverse") {
         playDirection *= -1;
-        advanceTurn();
-        broadcastGameState();
-        return;
-    }
+    }else
 
     // Skip
     if (value === "block") {
         advanceTurn(); // pula um jogador
-        advanceTurn();
-        broadcastGameState();
-        return;
-    }
+    }else{
 
-    // Carta numérica → turno normal
+    }
     advanceTurn();
     broadcastGameState();
 }
@@ -372,6 +365,30 @@ function dealCard(player, card) {
         }
 
     });
+    // armazena na mão do host qual o ucid da carta
+    if (!hands[player]) hands[player] = [];
+    hands[player].push({ card, ucid: last_ucid });
     last_ucid++;
     draw();
+}
+
+function removeCard(card){
+    // Remover a carta do jogador localmente
+    removeCardLocal(card.ucid);
+    
+    // Enviar mensagem para todos os outros jogadores para remover a carta
+    const removeMessage = {
+        type: "card_removed",
+        ucid: card.ucid
+    };
+    
+    // Broadcast para todos os jogadores conectados
+    dataChannels.forEach((channelMap, playerId) => {
+        let gameChannel = channelMap.get('game_events');
+        if (gameChannel && gameChannel.readyState === 'open') {
+            gameChannel.send(JSON.stringify(removeMessage));
+        }
+    });
+    
+    console.log(`Carta ${card.ucid} removida.`);
 }

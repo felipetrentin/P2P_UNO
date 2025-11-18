@@ -5,6 +5,23 @@ canvas.height = canvas.clientHeight;
 gl.viewport(0, 0, canvas.width, canvas.height);
 gl.clearColor(0.0, 0.176, 0.02, 1.0);
 
+function updateCanvasSize() {
+    const rect = canvas.getBoundingClientRect();
+    
+    // Usa as dimensões físicas do elemento
+    canvas.width = rect.width;
+    canvas.height = rect.height;
+    
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.clearColor(0.0, 0.176, 0.02, 1.0);
+}
+
+// Chamar inicialmente
+updateCanvasSize();
+
+// Adicionar listener para redimensionamento da janela
+window.addEventListener('resize', updateCanvasSize);
+
 // shaders atualizados para suportar alpha
 const vsSource = `#version 300 es
 in vec2 a_position;
@@ -178,9 +195,22 @@ function bringCardToTop(card) {
 }
 
 // Função auxiliar para obter coordenadas normalizadas
+// rect é para pegar a posição absoluta, já que os cliques são absolutos.
 function getNormalizedCoordinates(clientX, clientY) {
-    const mx = ((2 * clientX) / canvas.width) - 1;
-    const my = ((-2 * clientY) / canvas.height) + 1;
+    const rect = canvas.getBoundingClientRect();
+    
+    // Verifica se o clique está dentro do canvas
+    if (clientX < rect.left || clientX > rect.right || 
+        clientY < rect.top || clientY > rect.bottom) {
+        return { mx: 0, my: 0 }; // ou null, dependendo do que preferir
+    }
+    
+    const relativeX = clientX - rect.left;
+    const relativeY = clientY - rect.top;
+    
+    const mx = ((2 * relativeX) / canvas.width) - 1;
+    const my = ((-2 * relativeY) / canvas.height) + 1;
+    
     return { mx, my };
 }
 
@@ -202,6 +232,27 @@ function findCardAt(x, y) {
         }
     }
     return null;
+}
+
+// Função para encontrar a carta clicada/tocada
+function isCardAt(x, y, xr, yr, w, h) {
+    return(
+        x > xr - w / 2 && x < xr + w / 2 &&
+        y > yr - h / 2 && y < yr + h / 2
+    );
+}
+
+function isCardDelivered(){
+    const delivery = {x: 0, y:0};
+    const scr_card_w = (CARD_W / canvas.width);
+    const scr_card_h = (CARD_H / canvas.height);
+    if(isCardAt(dragCard.x, dragCard.y, delivery.x, delivery.y, scr_card_w, scr_card_h)){
+        dragCard.x = delivery.x;
+        dragCard.y = delivery.y+0.2;
+        onCardPlayed(dragCard);
+        broadcastCardUpdate();
+        draw();
+    }
 }
 
 // Eventos de mouse
@@ -231,8 +282,11 @@ canvas.addEventListener('mousemove', (e) => {
     }
 });
 
-canvas.addEventListener('mouseup', () => { 
-    dragCard = null; 
+canvas.addEventListener('mouseup', () => {
+    if(dragCard){
+        isCardDelivered();
+    }
+    dragCard = null;
 });
 
 // Eventos de touch
@@ -268,6 +322,9 @@ canvas.addEventListener('touchmove', (e) => {
 
 canvas.addEventListener('touchend', (e) => {
     e.preventDefault();
+    if(dragCard){
+        isCardDelivered();
+    }
     dragCard = null;
 });
 
@@ -358,7 +415,18 @@ function draw() {
     gl.bindVertexArray(cardVAO);
 
     // Ordena as cartas por zIndex para desenhar as de menor zIndex primeiro
-    const sortedCards = [...cards].sort((a, b) => a.zIndex - b.zIndex); 
+    const sortedCards = [...cards].sort((a, b) => a.zIndex - b.zIndex);
+    
+    if(game_card_type){
+        // adicionar carta de jogo
+        const game_card = {
+            x: 0,
+            y: 0,
+            idx: cardIndex.indexOf(game_card_type), // ID da carta no sprite sheet
+            rotation: 0
+        };
+        sortedCards.push(game_card);
+    }
 
     // Agora desenha cada carta
     for (const c of sortedCards) {
